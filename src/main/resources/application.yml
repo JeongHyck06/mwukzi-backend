@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: mwukzi-backend
+  
+  profiles:
+    active: local  # 기본 프로필
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate  # 배포 환경에서는 validate 또는 none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    # serialization:
+    #   WRITE_DATES_AS_TIMESTAMPS: false
+
+server:
+  port: 8080
+
+# JWT 설정 (환경변수로 주입 권장)
+jwt:
+  secret: ${JWT_SECRET:your-secret-key-change-this}
+  expiration: 86400000  # 24시간
+  room-token-expiration: 7200000  # 2시간
+
+# 카카오 API
+kakao:
+  rest-api-key: ${KAKAO_REST_API_KEY}
+  user-info-url: https://kapi.kakao.com/v2/user/me
