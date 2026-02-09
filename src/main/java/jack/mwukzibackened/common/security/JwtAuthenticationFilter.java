@@ -6,6 +6,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jack.mwukzibackened.common.jwt.JwtUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -15,10 +17,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     public JwtAuthenticationFilter(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
@@ -40,25 +44,47 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = jwtUtil.validateAndGetClaims(token);
             String subject = claims.getSubject();
-            if (subject != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            UUID userId = parseUserId(subject);
+            if (userId != null
+                    && SecurityContextHolder.getContext().getAuthentication() == null) {
                 List<SimpleGrantedAuthority> authorities = Collections.emptyList();
                 Object role = claims.get("role");
-                if (role instanceof String roleName && !roleName.isBlank()) {
+                String roleName = null;
+                if (role instanceof String roleValue) {
+                    roleName = roleValue.trim();
+                }
+                if (roleName != null && !roleName.isBlank()) {
                     authorities = List.of(new SimpleGrantedAuthority("ROLE_" + roleName.toUpperCase()));
                 }
 
+                Object providerClaim = claims.get("provider");
+                String provider = providerClaim instanceof String value ? value : null;
+                AuthenticatedUser principal = new AuthenticatedUser(userId, provider, roleName);
+
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        subject,
+                        principal,
                         null,
                         authorities
                 );
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.debug("JWT 검증 실패: path={}", request.getRequestURI());
             SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private UUID parseUserId(String subject) {
+        if (subject == null || subject.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(subject);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 }

@@ -1,7 +1,9 @@
 package jack.mwukzibackened.common.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jack.mwukzibackened.common.exception.ErrorResponse;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
@@ -19,6 +21,10 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
     ) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
-        response.getWriter().write("{\"message\":\"인증이 필요합니다\"}");
+        ErrorResponse error = ErrorResponse.builder()
+                .code("AUTH_REQUIRED")
+                .message("인증이 필요합니다")
+                .build();
+        response.getWriter().write(new ObjectMapper().writeValueAsString(error));
     }
 }
