@@ -8,8 +8,10 @@ import jack.mwukzibackened.domain.participant.ParticipantRepository;
 import jack.mwukzibackened.domain.participant.ParticipantRole;
 import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
+import jack.mwukzibackened.domain.room.dto.RoomParticipantResponse;
 import jack.mwukzibackened.domain.user.User;
 import jack.mwukzibackened.domain.user.UserRepository;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,16 +19,19 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class RoomService {
 
     private final RoomRepository roomRepository;
     private final ParticipantRepository participantRepository;
     private final UserRepository userRepository;
+    private final RoomSseService roomSseService;
 
     private static final int INVITE_CODE_LENGTH = 6;
     private static final String INVITE_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -84,13 +89,97 @@ public class RoomService {
                 .build();
         Participant saved = participantRepository.save(participant);
 
-        return JoinRoomResponse.builder()
+        participantRepository.findByRoomIdAndUserId(room.getId(), room.getHost().getId())
+                .orElseGet(() -> participantRepository.save(Participant.builder()
+                        .room(room)
+                        .user(room.getHost())
+                        .displayName(room.getHost().getNickname())
+                        .role(ParticipantRole.HOST)
+                        .build()));
+
+        JoinRoomResponse response = JoinRoomResponse.builder()
                 .roomId(room.getId())
                 .inviteCode(room.getInviteCode())
                 .participantId(saved.getId())
                 .displayName(saved.getDisplayName())
                 .roomStatus(room.getStatus())
                 .build();
+        broadcastParticipants(room.getInviteCode());
+        return response;
+    }
+
+    @Transactional
+    public List<RoomParticipantResponse> getParticipants(UUID roomId) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
+
+        participantRepository.findByRoomIdAndUserId(room.getId(), room.getHost().getId())
+                .orElseGet(() -> participantRepository.save(Participant.builder()
+                        .room(room)
+                        .user(room.getHost())
+                        .displayName(room.getHost().getNickname())
+                        .role(ParticipantRole.HOST)
+                        .build()));
+
+        return participantRepository.findByRoomId(room.getId()).stream()
+                .map(participant -> RoomParticipantResponse.builder()
+                        .participantId(participant.getId())
+                        .displayName(participant.getDisplayName())
+                        .role(participant.getRole())
+                        .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
+                        .build())
+                .toList();
+    }
+
+    @Transactional
+    public List<RoomParticipantResponse> getParticipantsByInviteCode(String inviteCode) {
+        String normalized = inviteCode.trim().toUpperCase();
+        Room room = roomRepository.findByInviteCode(normalized)
+                .orElseThrow(() -> new NotFoundException("초대 코드를 찾을 수 없습니다"));
+
+        participantRepository.findByRoomIdAndUserId(room.getId(), room.getHost().getId())
+                .orElseGet(() -> participantRepository.save(Participant.builder()
+                        .room(room)
+                        .user(room.getHost())
+                        .displayName(room.getHost().getNickname())
+                        .role(ParticipantRole.HOST)
+                        .build()));
+
+        return participantRepository.findByRoomId(room.getId()).stream()
+                .map(participant -> RoomParticipantResponse.builder()
+                        .participantId(participant.getId())
+                        .displayName(participant.getDisplayName())
+                        .role(participant.getRole())
+                        .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
+                        .build())
+                .toList();
+    }
+
+    @Transactional
+    public RoomParticipantResponse ensureHostParticipant(UUID userId, UUID roomId) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
+
+        if (!room.getHost().getId().equals(userId)) {
+            throw new UnauthorizedException("방장만 참여할 수 있습니다");
+        }
+
+        Participant participant = participantRepository.findByRoomIdAndUserId(roomId, userId)
+                .orElseGet(() -> participantRepository.save(Participant.builder()
+                        .room(room)
+                        .user(room.getHost())
+                        .displayName(room.getHost().getNickname())
+                        .role(ParticipantRole.HOST)
+                        .build()));
+
+        RoomParticipantResponse response = RoomParticipantResponse.builder()
+                .participantId(participant.getId())
+                .displayName(participant.getDisplayName())
+                .role(participant.getRole())
+                .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
+                .build();
+        broadcastParticipants(room.getInviteCode());
+        return response;
     }
 
     @Transactional
@@ -104,6 +193,7 @@ public class RoomService {
 
         participantRepository.deleteByRoomId(roomId);
         roomRepository.delete(room);
+        roomSseService.closeRoom(room.getInviteCode());
     }
 
     @Transactional
@@ -115,7 +205,18 @@ public class RoomService {
             throw new BadRequestException("방장은 이 방법으로 나갈 수 없습니다");
         }
 
+        String inviteCode = participant.getRoom().getInviteCode();
         participantRepository.delete(participant);
+        broadcastParticipants(inviteCode);
+    }
+
+    private void broadcastParticipants(String inviteCode) {
+        try {
+            List<RoomParticipantResponse> participants = getParticipantsByInviteCode(inviteCode);
+            roomSseService.sendParticipants(inviteCode, participants);
+        } catch (Exception ex) {
+            log.debug("SSE 참여자 갱신 실패: inviteCode={}", inviteCode);
+        }
     }
 
     private String generateUniqueInviteCode() {
