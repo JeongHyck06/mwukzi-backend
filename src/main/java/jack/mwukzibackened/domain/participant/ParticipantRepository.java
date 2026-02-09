@@ -10,4 +10,5 @@ import java.util.UUID;
 public interface ParticipantRepository extends JpaRepository<Participant, UUID> {
     List<Participant> findByRoomId(UUID roomId);
     boolean existsByRoomIdAndDisplayName(UUID roomId, String displayName);
+    void deleteByRoomId(UUID roomId);
 }
