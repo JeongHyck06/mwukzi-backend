@@ -1,18 +1,18 @@
 package jack.mwukzibackened.domain.auth;
 
+import jack.mwukzibackened.common.exception.UnauthorizedException;
+import jack.mwukzibackened.common.security.AuthenticatedUser;
 import jack.mwukzibackened.domain.auth.dto.KakaoLoginRequest;
 import jack.mwukzibackened.domain.auth.dto.LoginResponse;
+import jack.mwukzibackened.domain.auth.dto.UserMeResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -42,26 +42,15 @@ public class AuthController {
     @GetMapping("/me")
     @Operation(summary = "내 정보 조회", description = "Bearer JWT로 현재 로그인한 사용자 정보를 조회합니다.")
     @SecurityRequirement(name = "bearerAuth")
-    public ResponseEntity<LoginResponse.UserInfo> getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getPrincipal() == null) {
-            return ResponseEntity.status(401).build();
+    public ResponseEntity<UserMeResponse> getCurrentUser(
+            @AuthenticationPrincipal AuthenticatedUser principal
+    ) {
+        if (principal == null) {
+            throw new UnauthorizedException("인증이 필요합니다");
         }
 
-        String principal = authentication.getPrincipal().toString();
-        if ("anonymousUser".equalsIgnoreCase(principal)) {
-            return ResponseEntity.status(401).build();
-        }
-
-        UUID userId;
-        try {
-            userId = UUID.fromString(principal);
-        } catch (IllegalArgumentException ex) {
-            return ResponseEntity.status(401).build();
-        }
-
-        var user = authService.getUserById(userId);
-        return ResponseEntity.ok(LoginResponse.UserInfo.builder()
+        var user = authService.getUserById(principal.getUserId());
+        return ResponseEntity.ok(UserMeResponse.builder()
                 .userId(user.getId())
                 .provider(user.getProvider())
                 .nickname(user.getNickname())

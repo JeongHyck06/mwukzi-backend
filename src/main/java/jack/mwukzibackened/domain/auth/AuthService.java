@@ -1,11 +1,15 @@
 package jack.mwukzibackened.domain.auth;
 
+import jack.mwukzibackened.common.exception.NotFoundException;
 import jack.mwukzibackened.common.jwt.JwtUtil;
 import jack.mwukzibackened.domain.auth.dto.KakaoUserInfo;
 import jack.mwukzibackened.domain.auth.dto.LoginResponse;
 import jack.mwukzibackened.domain.user.User;
 import jack.mwukzibackened.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AuthService {
-    
+    private static final String PROVIDER_KAKAO = "kakao";
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final KakaoApiClient kakaoApiClient;
     private final UserRepository userRepository;
     private final JwtUtil jwtUtil;
@@ -30,22 +36,31 @@ public class AuthService {
         KakaoUserInfo kakaoUser = kakaoApiClient.getUserInfo(kakaoAccessToken);
         
         // 2. DB에서 사용자 조회 또는 생성
-        User user = userRepository.findByProviderAndProviderUserId("kakao", kakaoUser.getId().toString())
-                .orElseGet(() -> createUser(kakaoUser));
+        User user;
+        try {
+            user = userRepository.findByProviderAndProviderUserId(PROVIDER_KAKAO, kakaoUser.getId().toString())
+                    .orElseGet(() -> createUser(kakaoUser));
+        } catch (DataIntegrityViolationException ex) {
+            log.warn("동시성으로 인한 사용자 생성 충돌", ex);
+            user = userRepository.findByProviderAndProviderUserId(PROVIDER_KAKAO, kakaoUser.getId().toString())
+                    .orElseThrow(() -> new NotFoundException("사용자를 찾을 수 없습니다"));
+        }
         
         // 닉네임 업데이트 (카카오에서 변경했을 수 있음)
-        user.updateNickname(kakaoUser.getNickname());
-        userRepository.save(user);
+        if (!kakaoUser.getNickname().equals(user.getNickname())) {
+            user.updateNickname(kakaoUser.getNickname());
+            userRepository.save(user);
+        }
         
         // 3. JWT 생성
-        String accessToken = jwtUtil.generateUserToken(user.getId(), "kakao");
+        String accessToken = jwtUtil.generateUserToken(user.getId(), PROVIDER_KAKAO);
         
         // 4. 응답 생성
         return LoginResponse.builder()
                 .accessToken(accessToken)
                 .user(LoginResponse.UserInfo.builder()
                         .userId(user.getId())
-                        .provider("kakao")
+                        .provider(PROVIDER_KAKAO)
                         .nickname(user.getNickname())
                         .email(user.getEmail())
                         .build())
@@ -57,7 +72,7 @@ public class AuthService {
      */
     private User createUser(KakaoUserInfo kakaoUser) {
         User user = User.builder()
-                .provider("kakao")
+                .provider(PROVIDER_KAKAO)
                 .providerUserId(kakaoUser.getId().toString())
                 .nickname(kakaoUser.getNickname())
                 .email(kakaoUser.getEmail())
@@ -71,6 +86,6 @@ public class AuthService {
      */
     public User getUserById(java.util.UUID userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+                .orElseThrow(() -> new NotFoundException("사용자를 찾을 수 없습니다"));
     }
 }
