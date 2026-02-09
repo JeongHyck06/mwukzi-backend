@@ -7,11 +7,12 @@ import lombok.RequiredArgsConstructor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -37,15 +38,34 @@ public class AuthController {
     /**
      * GET /api/v1/auth/me
      * 현재 로그인한 사용자 정보 조회
-     * TODO: JWT에서 userId 추출하는 인증 처리 필요
      */
     @GetMapping("/me")
     @Operation(summary = "내 정보 조회", description = "Bearer JWT로 현재 로그인한 사용자 정보를 조회합니다.")
     @SecurityRequirement(name = "bearerAuth")
-    public ResponseEntity<Map<String, Object>> getCurrentUser() {
-        // 임시로 구현되지 않음을 명시
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(Map.of(
-                "message", "인증 미들웨어 구현 필요"
-        ));
+    public ResponseEntity<LoginResponse.UserInfo> getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getPrincipal() == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        String principal = authentication.getPrincipal().toString();
+        if ("anonymousUser".equalsIgnoreCase(principal)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        UUID userId;
+        try {
+            userId = UUID.fromString(principal);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.status(401).build();
+        }
+
+        var user = authService.getUserById(userId);
+        return ResponseEntity.ok(LoginResponse.UserInfo.builder()
+                .userId(user.getId())
+                .provider(user.getProvider())
+                .nickname(user.getNickname())
+                .email(user.getEmail())
+                .build());
     }
 }
