@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -45,6 +46,15 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<ErrorResponse> handleBadRequest(BadRequestException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.builder()
+                        .code("INVALID_REQUEST")
+                        .message(ex.getMessage())
+                        .build());
+    }
+
     @ExceptionHandler(KakaoAuthException.class)
     public ResponseEntity<ErrorResponse> handleKakaoAuth(KakaoAuthException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -61,6 +71,15 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.builder()
                         .code("KAKAO_API_ERROR")
                         .message("외부 인증 서비스 오류입니다")
+                        .build());
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ErrorResponse.builder()
+                        .code("NOT_FOUND")
+                        .message("요청하신 API를 찾을 수 없습니다")
                         .build());
     }
 
