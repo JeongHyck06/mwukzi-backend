@@ -32,3 +32,8 @@ jwt:
 kakao:
   rest-api-key: ${KAKAO_REST_API_KEY}
   user-info-url: https://kapi.kakao.com/v2/user/me
+
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  base-url: https://api.openai.com

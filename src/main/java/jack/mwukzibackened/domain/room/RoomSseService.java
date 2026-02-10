@@ -1,5 +1,6 @@
 package jack.mwukzibackened.domain.room;
 
+import jack.mwukzibackened.domain.ai.dto.MenuRecommendationResponse;
 import jack.mwukzibackened.domain.room.dto.RoomParticipantResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,10 @@ public class RoomSseService {
 
     public void sendParticipants(String inviteCode, List<RoomParticipantResponse> participants) {
         send(inviteCode, "participants", participants);
+    }
+
+    public void sendRecommendation(String inviteCode, MenuRecommendationResponse recommendation) {
+        send(inviteCode, "recommendation", recommendation);
     }
 
     public void closeRoom(String inviteCode) {

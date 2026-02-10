@@ -183,6 +183,51 @@ public class RoomService {
     }
 
     @Transactional
+    public RoomParticipantResponse submitPreference(
+            UUID roomId,
+            UUID userId,
+            UUID participantId
+    ) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
+
+        Participant participant;
+        if (userId != null) {
+            if (!room.getHost().getId().equals(userId)) {
+                throw new UnauthorizedException("방장만 인증 기반 제출이 가능합니다");
+            }
+            participant = participantRepository.findByRoomIdAndUserId(roomId, userId)
+                    .orElseGet(() -> participantRepository.save(Participant.builder()
+                            .room(room)
+                            .user(room.getHost())
+                            .displayName(room.getHost().getNickname())
+                            .role(ParticipantRole.HOST)
+                            .build()));
+        } else {
+            if (participantId == null) {
+                throw new BadRequestException("participant_id가 필요합니다");
+            }
+            participant = participantRepository.findById(participantId)
+                    .orElseThrow(() -> new NotFoundException("참여자를 찾을 수 없습니다"));
+            if (!participant.getRoom().getId().equals(roomId)) {
+                throw new BadRequestException("방 정보가 올바르지 않습니다");
+            }
+        }
+
+        participant.submitPreference();
+        participant.updateLastSeen();
+
+        RoomParticipantResponse response = RoomParticipantResponse.builder()
+                .participantId(participant.getId())
+                .displayName(participant.getDisplayName())
+                .role(participant.getRole())
+                .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
+                .build();
+        broadcastParticipants(room.getInviteCode());
+        return response;
+    }
+
+    @Transactional
     public void leaveRoomAsHost(UUID userId, UUID roomId) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
@@ -199,7 +244,11 @@ public class RoomService {
     @Transactional
     public void leaveRoomAsGuest(UUID participantId) {
         Participant participant = participantRepository.findById(participantId)
-                .orElseThrow(() -> new NotFoundException("참여자를 찾을 수 없습니다"));
+                .orElse(null);
+        if (participant == null) {
+            // 방장이 먼저 나가며 방/참여자가 정리된 경우 게스트 나가기를 멱등 처리
+            return;
+        }
 
         if (participant.getRole() == ParticipantRole.HOST) {
             throw new BadRequestException("방장은 이 방법으로 나갈 수 없습니다");
