@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jack.mwukzibackened.common.exception.BadRequestException;
 import jack.mwukzibackened.common.exception.NotFoundException;
+import jack.mwukzibackened.common.exception.UnauthorizedException;
 import jack.mwukzibackened.domain.ai.dto.MenuRecommendationRequest;
 import jack.mwukzibackened.domain.ai.dto.MenuRecommendationResponse;
+import jack.mwukzibackened.domain.room.Room;
 import jack.mwukzibackened.domain.room.RoomRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -22,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +36,7 @@ public class AiRecommendationService {
     private final RoomRepository roomRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WebClient webClient = WebClient.builder().build();
+    private final ConcurrentHashMap<UUID, MenuRecommendationResponse> latestRecommendations = new ConcurrentHashMap<>();
 
     @Value("${openai.api-key:}")
     private String openAiApiKey;
@@ -45,10 +49,13 @@ public class AiRecommendationService {
 
     public MenuRecommendationResponse recommendMenus(
             UUID roomId,
+            UUID requesterUserId,
             MenuRecommendationRequest request
     ) {
-        if (!roomRepository.existsById(roomId)) {
-            throw new NotFoundException("방을 찾을 수 없습니다");
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
+        if (!room.getHost().getId().equals(requesterUserId)) {
+            throw new UnauthorizedException("방장만 추천을 시작할 수 있습니다");
         }
         if (openAiApiKey == null || openAiApiKey.isBlank()) {
             throw new BadRequestException("OPENAI_API_KEY가 설정되지 않았습니다");
@@ -69,7 +76,19 @@ public class AiRecommendationService {
             MenuRecommendationResponse.MenuItem item = response.getMenus().get(i);
             log.info("[AI 추천] {}. {} - {}", i + 1, item.getName(), item.getReason());
         }
+        latestRecommendations.put(roomId, response);
 
+        return response;
+    }
+
+    public MenuRecommendationResponse getLatestRecommendation(UUID roomId) {
+        if (!roomRepository.existsById(roomId)) {
+            throw new NotFoundException("방을 찾을 수 없습니다");
+        }
+        MenuRecommendationResponse response = latestRecommendations.get(roomId);
+        if (response == null) {
+            throw new NotFoundException("아직 생성된 추천 결과가 없습니다");
+        }
         return response;
     }
 
