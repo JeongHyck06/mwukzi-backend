@@ -9,6 +9,7 @@ import jack.mwukzibackened.domain.ai.dto.MenuRecommendationRequest;
 import jack.mwukzibackened.domain.ai.dto.MenuRecommendationResponse;
 import jack.mwukzibackened.domain.room.Room;
 import jack.mwukzibackened.domain.room.RoomRepository;
+import jack.mwukzibackened.domain.room.RoomSseService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,7 @@ public class AiRecommendationService {
     private static final Duration OPENAI_TIMEOUT = Duration.ofSeconds(15);
 
     private final RoomRepository roomRepository;
+    private final RoomSseService roomSseService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final WebClient webClient = WebClient.builder().build();
     private final ConcurrentHashMap<UUID, MenuRecommendationResponse> latestRecommendations = new ConcurrentHashMap<>();
@@ -77,6 +79,7 @@ public class AiRecommendationService {
             log.info("[AI 추천] {}. {} - {}", i + 1, item.getName(), item.getReason());
         }
         latestRecommendations.put(roomId, response);
+        roomSseService.sendRecommendation(room.getInviteCode(), response);
 
         return response;
     }

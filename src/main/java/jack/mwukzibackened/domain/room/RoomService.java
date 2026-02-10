@@ -244,7 +244,11 @@ public class RoomService {
     @Transactional
     public void leaveRoomAsGuest(UUID participantId) {
         Participant participant = participantRepository.findById(participantId)
-                .orElseThrow(() -> new NotFoundException("참여자를 찾을 수 없습니다"));
+                .orElse(null);
+        if (participant == null) {
+            // 방장이 먼저 나가며 방/참여자가 정리된 경우 게스트 나가기를 멱등 처리
+            return;
+        }
 
         if (participant.getRole() == ParticipantRole.HOST) {
             throw new BadRequestException("방장은 이 방법으로 나갈 수 없습니다");
