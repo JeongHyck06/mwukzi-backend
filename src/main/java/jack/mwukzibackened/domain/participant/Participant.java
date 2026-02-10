@@ -39,6 +39,9 @@ public class Participant {
     
     @Column(name = "has_submitted", nullable = false)
     private Boolean hasSubmitted = false;
+
+    @Column(name = "preference_text", columnDefinition = "TEXT")
+    private String preferenceText;
     
     @CreationTimestamp
     @Column(name = "joined_at", nullable = false, updatable = false)
@@ -57,6 +60,11 @@ public class Participant {
     
     public void submitPreference() {
         this.hasSubmitted = true;
+    }
+
+    public void submitPreference(String preferenceText) {
+        this.hasSubmitted = true;
+        this.preferenceText = preferenceText;
     }
     
     public void updateLastSeen() {

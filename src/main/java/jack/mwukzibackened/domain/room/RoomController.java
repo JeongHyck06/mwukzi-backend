@@ -5,6 +5,7 @@ import jack.mwukzibackened.common.security.AuthenticatedUser;
 import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
 import jack.mwukzibackened.domain.room.dto.JoinRoomRequest;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
+import jack.mwukzibackened.domain.room.dto.ParticipantPreferenceResponse;
 import jack.mwukzibackened.domain.room.dto.RoomParticipantResponse;
 import jack.mwukzibackened.domain.room.dto.SubmitPreferenceRequest;
 import jakarta.validation.Valid;
@@ -142,8 +143,24 @@ public class RoomController {
         RoomParticipantResponse response = roomService.submitPreference(
                 roomId,
                 principal == null ? null : principal.getUserId(),
-                participantId
+                participantId,
+                request == null ? null : request.getChips(),
+                request == null ? null : request.getFreeText()
         );
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * GET /api/v1/rooms/{roomId}/preferences/{participantId}
+     * 참여자 취향 상세 조회 (인증 불필요)
+     */
+    @GetMapping("/{roomId}/preferences/{participantId}")
+    @Operation(summary = "참여자 취향 상세 조회", description = "참여자의 제출된 취향 상세를 조회합니다.")
+    public ResponseEntity<ParticipantPreferenceResponse> getParticipantPreference(
+            @PathVariable java.util.UUID roomId,
+            @PathVariable java.util.UUID participantId
+    ) {
+        ParticipantPreferenceResponse response = roomService.getParticipantPreference(roomId, participantId);
         return ResponseEntity.ok(response);
     }
 
