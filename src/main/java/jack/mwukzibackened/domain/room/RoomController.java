@@ -6,6 +6,7 @@ import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
 import jack.mwukzibackened.domain.room.dto.JoinRoomRequest;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
 import jack.mwukzibackened.domain.room.dto.RoomParticipantResponse;
+import jack.mwukzibackened.domain.room.dto.SubmitPreferenceRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import io.swagger.v3.oas.annotations.Operation;
@@ -122,6 +123,26 @@ public class RoomController {
         RoomParticipantResponse response = roomService.ensureHostParticipant(
                 principal.getUserId(),
                 roomId
+        );
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * POST /api/v1/rooms/{roomId}/preferences/submit
+     * 취향 제출 완료 처리 (SSE 브로드캐스트)
+     */
+    @PostMapping("/{roomId}/preferences/submit")
+    @Operation(summary = "취향 제출 완료", description = "참여자의 취향 입력 완료 상태를 저장하고 SSE로 전파합니다.")
+    public ResponseEntity<RoomParticipantResponse> submitPreference(
+            @PathVariable java.util.UUID roomId,
+            @RequestBody(required = false) SubmitPreferenceRequest request,
+            @AuthenticationPrincipal AuthenticatedUser principal
+    ) {
+        java.util.UUID participantId = request == null ? null : request.getParticipantId();
+        RoomParticipantResponse response = roomService.submitPreference(
+                roomId,
+                principal == null ? null : principal.getUserId(),
+                participantId
         );
         return ResponseEntity.ok(response);
     }
