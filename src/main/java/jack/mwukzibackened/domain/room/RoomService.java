@@ -8,6 +8,7 @@ import jack.mwukzibackened.domain.participant.ParticipantRepository;
 import jack.mwukzibackened.domain.participant.ParticipantRole;
 import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
+import jack.mwukzibackened.domain.room.dto.ParticipantPreferenceResponse;
 import jack.mwukzibackened.domain.room.dto.RoomParticipantResponse;
 import jack.mwukzibackened.domain.user.User;
 import jack.mwukzibackened.domain.user.UserRepository;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.UUID;
 
 @Service
@@ -186,7 +188,9 @@ public class RoomService {
     public RoomParticipantResponse submitPreference(
             UUID roomId,
             UUID userId,
-            UUID participantId
+            UUID participantId,
+            List<String> chips,
+            String freeText
     ) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
@@ -214,7 +218,7 @@ public class RoomService {
             }
         }
 
-        participant.submitPreference();
+        participant.submitPreference(buildPreferenceText(chips, freeText));
         participant.updateLastSeen();
 
         RoomParticipantResponse response = RoomParticipantResponse.builder()
@@ -225,6 +229,43 @@ public class RoomService {
                 .build();
         broadcastParticipants(room.getInviteCode());
         return response;
+    }
+
+    @Transactional
+    public ParticipantPreferenceResponse getParticipantPreference(
+            UUID roomId,
+            UUID participantId
+    ) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
+
+        Participant participant = participantRepository.findById(participantId)
+                .orElseThrow(() -> new NotFoundException("참여자를 찾을 수 없습니다"));
+        if (!participant.getRoom().getId().equals(room.getId())) {
+            throw new BadRequestException("방 정보가 올바르지 않습니다");
+        }
+
+        return ParticipantPreferenceResponse.builder()
+                .participantId(participant.getId())
+                .displayName(participant.getDisplayName())
+                .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
+                .preferenceText(participant.getPreferenceText() == null ? "" : participant.getPreferenceText())
+                .build();
+    }
+
+    private String buildPreferenceText(List<String> chips, String freeText) {
+        StringJoiner joiner = new StringJoiner(", ");
+        if (chips != null) {
+            for (String chip : chips) {
+                if (chip != null && !chip.trim().isEmpty()) {
+                    joiner.add(chip.trim());
+                }
+            }
+        }
+        if (freeText != null && !freeText.trim().isEmpty()) {
+            joiner.add(freeText.trim());
+        }
+        return joiner.toString();
     }
 
     @Transactional
