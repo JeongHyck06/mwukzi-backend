@@ -23,7 +23,6 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
-import java.util.StringJoiner;
 import java.util.UUID;
 
 @Service
@@ -243,26 +242,6 @@ public class RoomService {
         return response;
     }
 
-    public ParticipantPreferenceResponse getParticipantPreference(UUID roomId, UUID participantId) {
-        Participant participant = participantRepository.findById(participantId)
-                .orElseThrow(() -> new NotFoundException("참여자를 찾을 수 없습니다"));
-        if (!participant.getRoom().getId().equals(roomId)) {
-            throw new BadRequestException("방 정보가 올바르지 않습니다");
-        }
-
-        String preferenceText = participant.getPreferenceText();
-        if (preferenceText == null || preferenceText.isBlank()) {
-            preferenceText = "";
-        }
-
-        return ParticipantPreferenceResponse.builder()
-                .participantId(participant.getId())
-                .displayName(participant.getDisplayName())
-                .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
-                .preferenceText(preferenceText)
-                .build();
-    }
-
     @Transactional
     public ParticipantPreferenceResponse getParticipantPreference(
             UUID roomId,
@@ -283,21 +262,6 @@ public class RoomService {
                 .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
                 .preferenceText(participant.getPreferenceText() == null ? "" : participant.getPreferenceText())
                 .build();
-    }
-
-    private String buildPreferenceText(List<String> chips, String freeText) {
-        StringJoiner joiner = new StringJoiner(", ");
-        if (chips != null) {
-            for (String chip : chips) {
-                if (chip != null && !chip.trim().isEmpty()) {
-                    joiner.add(chip.trim());
-                }
-            }
-        }
-        if (freeText != null && !freeText.trim().isEmpty()) {
-            joiner.add(freeText.trim());
-        }
-        return joiner.toString();
     }
 
     @Transactional

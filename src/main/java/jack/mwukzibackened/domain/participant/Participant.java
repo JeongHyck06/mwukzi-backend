@@ -62,11 +62,6 @@ public class Participant {
         this.hasSubmitted = true;
         this.preferenceText = preferenceText;
     }
-
-    public void submitPreference(String preferenceText) {
-        this.hasSubmitted = true;
-        this.preferenceText = preferenceText;
-    }
     
     public void updateLastSeen() {
         this.lastSeenAt = LocalDateTime.now();
