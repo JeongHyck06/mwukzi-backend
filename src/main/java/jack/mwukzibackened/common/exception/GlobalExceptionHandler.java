@@ -70,17 +70,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(ErrorResponse.builder()
                         .code("KAKAO_API_ERROR")
-                        .message("외부 인증 서비스 오류입니다")
-                        .build());
-    }
-
-    @ExceptionHandler(NaverApiException.class)
-    public ResponseEntity<ErrorResponse> handleNaverApi(NaverApiException ex) {
-        log.warn("네이버 API 오류: {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body(ErrorResponse.builder()
-                        .code("NAVER_API_ERROR")
-                        .message("외부 장소 검색 서비스 오류입니다")
+                        .message("외부 카카오 서비스 오류입니다")
                         .build());
     }
 

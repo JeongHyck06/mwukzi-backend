@@ -1,21 +1,26 @@
 package jack.mwukzibackened.domain.place;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jack.mwukzibackened.common.exception.BadRequestException;
-import jack.mwukzibackened.common.exception.NaverApiException;
+import jack.mwukzibackened.common.exception.KakaoApiException;
+import jack.mwukzibackened.common.exception.NotFoundException;
+import jack.mwukzibackened.domain.ai.AiRecommendationService;
+import jack.mwukzibackened.domain.ai.dto.MenuRecommendationResponse;
 import jack.mwukzibackened.domain.place.dto.PlaceSearchRequest;
 import jack.mwukzibackened.domain.place.dto.PlaceSearchResponse;
+import jack.mwukzibackened.domain.room.Room;
+import jack.mwukzibackened.domain.room.RoomRepository;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,251 +28,215 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PlaceSearchService {
 
-    private static final Logger log = LoggerFactory.getLogger(PlaceSearchService.class);
-    private static final Duration NAVER_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration KAKAO_TIMEOUT = Duration.ofSeconds(4);
+    private static final int DEFAULT_SIZE_PER_KEYWORD = 5;
+    private static final int DEFAULT_MAX_KEYWORDS = 5;
+    private static final int MAX_RESULT_SIZE = 30;
 
-    @Value("${naver.search.client-id:}")
-    private String naverSearchClientId;
-
-    @Value("${naver.search.client-secret:}")
-    private String naverSearchClientSecret;
-
-    @Value("${naver.search.local-search-url:https://openapi.naver.com/v1/search/local.json}")
-    private String naverLocalSearchUrl;
-
+    private final RoomRepository roomRepository;
+    private final AiRecommendationService aiRecommendationService;
     private final WebClient webClient = WebClient.builder().build();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public PlaceSearchResponse searchNearbyPlaces(PlaceSearchRequest request) {
-        if (naverSearchClientId == null || naverSearchClientId.isBlank()
-                || naverSearchClientSecret == null || naverSearchClientSecret.isBlank()) {
-            throw new BadRequestException("네이버 검색 API 키가 설정되지 않았습니다");
+    @Value("${kakao.rest-api-key:}")
+    private String kakaoRestApiKey;
+
+    @Value("${kakao.local-search-url:https://dapi.kakao.com/v2/local/search/keyword.json}")
+    private String kakaoLocalSearchUrl;
+
+    public PlaceSearchResponse search(UUID roomId, PlaceSearchRequest request) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("방을 찾을 수 없습니다"));
+
+        double centerLat = request != null && request.getLatitude() != null
+                ? request.getLatitude()
+                : room.getCenterLat().doubleValue();
+        double centerLng = request != null && request.getLongitude() != null
+                ? request.getLongitude()
+                : room.getCenterLng().doubleValue();
+        int radiusMeters = request != null && request.getRadiusMeters() != null
+                ? request.getRadiusMeters()
+                : room.getRadiusMeters();
+        int sizePerKeyword = request != null && request.getSizePerKeyword() != null
+                ? request.getSizePerKeyword()
+                : DEFAULT_SIZE_PER_KEYWORD;
+
+        List<String> keywords = normalizeKeywords(request == null ? List.of() : request.getKeywords());
+        if (keywords.isEmpty()) {
+            keywords = readKeywordsFromLatestRecommendation(roomId);
+        }
+        if (keywords.isEmpty()) {
+            throw new BadRequestException("검색 키워드가 없습니다. keywords를 전달하거나 AI 추천을 먼저 생성해 주세요");
         }
 
-        List<String> menus = normalizeMenus(request.getMenus());
-        if (menus.isEmpty()) {
-            throw new BadRequestException("유효한 메뉴 정보가 없습니다");
+        if (kakaoRestApiKey == null || kakaoRestApiKey.isBlank()) {
+            throw new BadRequestException("KAKAO_REST_API_KEY가 설정되지 않았습니다");
         }
 
-        int maxItems = request.getMaxItems() == null ? 20 : request.getMaxItems();
         Map<String, PlaceSearchResponse.PlaceItem> merged = new LinkedHashMap<>();
-
-        for (String menu : menus.stream().limit(5).toList()) {
-            String query = menu + " 맛집";
-            List<NaverLocalItem> localItems = callNaverLocalSearch(query, 5);
-
-            for (NaverLocalItem item : localItems) {
-                Integer distanceMeters = calculateDistanceMeters(
-                        request.getLatitude(),
-                        request.getLongitude(),
-                        item.latitude(),
-                        item.longitude()
-                );
-
-                PlaceSearchResponse.PlaceItem mapped = PlaceSearchResponse.PlaceItem.builder()
-                        .name(item.normalizedTitle())
-                        .category(item.normalizedCategory())
-                        .address(item.normalizedAddress())
-                        .roadAddress(item.normalizedRoadAddress())
-                        .link(item.link())
-                        .latitude(item.latitude())
-                        .longitude(item.longitude())
-                        .distanceMeters(distanceMeters)
-                        .matchedMenu(menu)
-                        .build();
-
-                String dedupeKey = buildDedupeKey(mapped);
-                PlaceSearchResponse.PlaceItem previous = merged.get(dedupeKey);
-                if (previous == null || isBetterByDistance(previous, mapped)) {
-                    merged.put(dedupeKey, mapped);
-                }
+        for (String keyword : keywords) {
+            List<PlaceSearchResponse.PlaceItem> items = callKakaoKeywordSearch(
+                    keyword,
+                    centerLat,
+                    centerLng,
+                    radiusMeters,
+                    sizePerKeyword
+            );
+            for (PlaceSearchResponse.PlaceItem item : items) {
+                String key = item.getProviderPlaceId() == null || item.getProviderPlaceId().isBlank()
+                        ? item.getName() + ":" + item.getLatitude() + ":" + item.getLongitude()
+                        : item.getProviderPlaceId();
+                merged.putIfAbsent(key, item);
             }
         }
 
-        List<PlaceSearchResponse.PlaceItem> sorted = new ArrayList<>(merged.values());
-        sorted.sort(Comparator.comparingInt(this::distanceOrMax));
+        List<PlaceSearchResponse.PlaceItem> places = merged.values().stream()
+                .sorted(Comparator.comparing(item -> item.getDistanceMeters() == null ? Integer.MAX_VALUE : item.getDistanceMeters()))
+                .limit(MAX_RESULT_SIZE)
+                .toList();
 
         return PlaceSearchResponse.builder()
-                .places(sorted.stream().limit(maxItems).toList())
+                .centerLat(centerLat)
+                .centerLng(centerLng)
+                .radiusMeters(radiusMeters)
+                .keywordsUsed(keywords)
+                .places(places)
                 .build();
     }
 
-    private List<String> normalizeMenus(List<String> menus) {
-        if (menus == null) {
+    private List<String> readKeywordsFromLatestRecommendation(UUID roomId) {
+        try {
+            MenuRecommendationResponse latest = aiRecommendationService.getLatestRecommendation(roomId);
+            List<String> menuKeywords = latest.getMenus().stream()
+                    .map(MenuRecommendationResponse.MenuItem::getName)
+                    .toList();
+            return normalizeKeywords(menuKeywords);
+        } catch (NotFoundException ex) {
             return List.of();
         }
-        Set<String> deduped = new LinkedHashSet<>();
-        for (String raw : menus) {
-            if (raw == null) {
+    }
+
+    private List<String> normalizeKeywords(List<String> rawKeywords) {
+        if (rawKeywords == null || rawKeywords.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String keyword : rawKeywords) {
+            if (keyword == null) {
                 continue;
             }
-            String normalized = raw.trim();
+            String normalized = keyword.trim();
             if (!normalized.isEmpty()) {
-                deduped.add(normalized);
+                unique.add(normalized);
+            }
+            if (unique.size() >= DEFAULT_MAX_KEYWORDS) {
+                break;
             }
         }
-        return new ArrayList<>(deduped);
+        return new ArrayList<>(unique);
     }
 
-    private List<NaverLocalItem> callNaverLocalSearch(String query, int display) {
+    private List<PlaceSearchResponse.PlaceItem> callKakaoKeywordSearch(
+            String keyword,
+            double centerLat,
+            double centerLng,
+            int radiusMeters,
+            int sizePerKeyword
+    ) {
         try {
-            String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
-            String requestUrl = naverLocalSearchUrl
-                    + "?query=" + encodedQuery
-                    + "&display=" + display
-                    + "&start=1&sort=random";
+            URI uri = UriComponentsBuilder
+                    .fromUriString(kakaoLocalSearchUrl)
+                    .queryParam("query", keyword)
+                    .queryParam("x", centerLng)
+                    .queryParam("y", centerLat)
+                    .queryParam("radius", radiusMeters)
+                    .queryParam("size", sizePerKeyword)
+                    .queryParam("sort", "distance")
+                    .queryParam("category_group_code", "FD6")
+                    .build()
+                    .encode()
+                    .toUri();
 
-            NaverLocalSearchResponse response = webClient.get()
-                    .uri(requestUrl)
-                    .header("X-Naver-Client-Id", naverSearchClientId)
-                    .header("X-Naver-Client-Secret", naverSearchClientSecret)
+            String rawResponse = webClient.get()
+                    .uri(uri)
+                    .header("Authorization", "KakaoAK " + kakaoRestApiKey)
                     .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
+                    .onStatus(HttpStatusCode::is4xxClientError, response ->
+                            response.bodyToMono(String.class)
                                     .defaultIfEmpty("")
-                                    .flatMap(body -> {
-                                        log.warn("네이버 검색 4xx: query={}, status={}, body={}",
-                                                query, clientResponse.statusCode().value(), body);
-                                        return Mono.error(new NaverApiException("네이버 검색 API 요청이 거부되었습니다"));
-                                    })
+                                    .flatMap(body -> Mono.error(new KakaoApiException("카카오 장소 검색 4xx 응답")))
                     )
-                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
-                            clientResponse.bodyToMono(String.class)
+                    .onStatus(HttpStatusCode::is5xxServerError, response ->
+                            response.bodyToMono(String.class)
                                     .defaultIfEmpty("")
-                                    .flatMap(body -> {
-                                        log.warn("네이버 검색 5xx: query={}, status={}, body={}",
-                                                query, clientResponse.statusCode().value(), body);
-                                        return Mono.error(new NaverApiException("네이버 검색 API 서버 오류입니다"));
-                                    })
+                                    .flatMap(body -> Mono.error(new KakaoApiException("카카오 장소 검색 5xx 응답")))
                     )
-                    .bodyToMono(NaverLocalSearchResponse.class)
-                    .timeout(NAVER_TIMEOUT)
+                    .bodyToMono(String.class)
+                    .timeout(KAKAO_TIMEOUT)
                     .block();
 
-            if (response == null || response.items() == null) {
+            if (rawResponse == null || rawResponse.isBlank()) {
+                throw new KakaoApiException("카카오 장소 검색 응답이 비어 있습니다");
+            }
+            JsonNode root = objectMapper.readTree(rawResponse);
+
+            JsonNode documents = root.path("documents");
+            if (!documents.isArray()) {
                 return List.of();
             }
-            return response.items();
-        } catch (NaverApiException ex) {
+
+            List<PlaceSearchResponse.PlaceItem> items = new ArrayList<>();
+            for (JsonNode doc : documents) {
+                items.add(PlaceSearchResponse.PlaceItem.builder()
+                        .provider("kakao")
+                        .providerPlaceId(doc.path("id").asText(""))
+                        .name(doc.path("place_name").asText(""))
+                        .category(doc.path("category_name").asText(""))
+                        .address(doc.path("address_name").asText(""))
+                        .roadAddress(doc.path("road_address_name").asText(""))
+                        .phone(doc.path("phone").asText(""))
+                        .distanceMeters(parseIntOrNull(doc.path("distance").asText(null)))
+                        .latitude(parseDoubleOrNull(doc.path("y").asText(null)))
+                        .longitude(parseDoubleOrNull(doc.path("x").asText(null)))
+                        .placeUrl(doc.path("place_url").asText(""))
+                        .sourceKeyword(keyword)
+                        .build());
+            }
+            return items;
+        } catch (KakaoApiException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.error("네이버 검색 호출 실패: query={}", query, ex);
-            throw new NaverApiException("네이버 검색 호출에 실패했습니다", ex);
+            log.error("카카오 장소 검색 실패: keyword={}, lat={}, lng={}", keyword, centerLat, centerLng, ex);
+            throw new KakaoApiException("카카오 장소 검색 호출 실패", ex);
         }
     }
 
-    private int distanceOrMax(PlaceSearchResponse.PlaceItem item) {
-        return item.getDistanceMeters() == null ? Integer.MAX_VALUE : item.getDistanceMeters();
-    }
-
-    private boolean isBetterByDistance(
-            PlaceSearchResponse.PlaceItem previous,
-            PlaceSearchResponse.PlaceItem candidate
-    ) {
-        return distanceOrMax(candidate) < distanceOrMax(previous);
-    }
-
-    private String buildDedupeKey(PlaceSearchResponse.PlaceItem item) {
-        String address = item.getRoadAddress() != null && !item.getRoadAddress().isBlank()
-                ? item.getRoadAddress()
-                : item.getAddress();
-        return item.getName() + "|" + (address == null ? "" : address);
-    }
-
-    private Integer calculateDistanceMeters(
-            Double originLat,
-            Double originLng,
-            Double targetLat,
-            Double targetLng
-    ) {
-        if (originLat == null || originLng == null || targetLat == null || targetLng == null) {
+    private Integer parseIntOrNull(String value) {
+        if (value == null || value.isBlank()) {
             return null;
         }
-
-        double earthRadius = 6371000.0;
-        double dLat = Math.toRadians(targetLat - originLat);
-        double dLng = Math.toRadians(targetLng - originLng);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(originLat))
-                * Math.cos(Math.toRadians(targetLat))
-                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return (int) Math.round(earthRadius * c);
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
-    private record NaverLocalSearchResponse(List<NaverLocalItem> items) {
-    }
-
-    private record NaverLocalItem(
-            @JsonProperty("title") String title,
-            @JsonProperty("category") String category,
-            @JsonProperty("address") String address,
-            @JsonProperty("roadAddress") String roadAddress,
-            @JsonProperty("link") String link,
-            @JsonProperty("mapx") String mapx,
-            @JsonProperty("mapy") String mapy
-    ) {
-        String normalizedTitle() {
-            return decode(title);
+    private Double parseDoubleOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
         }
-
-        String normalizedCategory() {
-            return decode(category);
-        }
-
-        String normalizedAddress() {
-            return decode(address);
-        }
-
-        String normalizedRoadAddress() {
-            return decode(roadAddress);
-        }
-
-        Double latitude() {
-            return toLatLngValue(mapy);
-        }
-
-        Double longitude() {
-            return toLatLngValue(mapx);
-        }
-
-        private static String decode(String raw) {
-            if (raw == null) {
-                return "";
-            }
-            return raw
-                    .replaceAll("<[^>]*>", "")
-                    .replace("&amp;", "&")
-                    .replace("&lt;", "<")
-                    .replace("&gt;", ">")
-                    .replace("&quot;", "\"")
-                    .replace("&#39;", "'")
-                    .replace("&nbsp;", " ")
-                    .trim();
-        }
-
-        private static Double toLatLngValue(String raw) {
-            if (raw == null || raw.isBlank()) {
-                return null;
-            }
-            try {
-                double value = Double.parseDouble(raw);
-                if (Math.abs(value) <= 180.0) {
-                    return value;
-                }
-                double scaled = value / 10000000.0;
-                if (Math.abs(scaled) <= 180.0) {
-                    return scaled;
-                }
-                return null;
-            } catch (NumberFormatException ex) {
-                return null;
-            }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ex) {
+            return null;
         }
     }
 }

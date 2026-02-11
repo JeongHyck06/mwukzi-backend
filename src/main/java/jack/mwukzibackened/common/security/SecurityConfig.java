@@ -33,6 +33,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/kakao",
                                 "/api/v1/rooms/join",
                                 "/api/v1/rooms/leave",
+                                "/api/v1/rooms/*/places/search",
                                 "/api/v1/rooms/*/participants",
                                 "/api/v1/rooms/*/preferences/submit",
                                 "/api/v1/rooms/*/preferences/**",
@@ -40,7 +41,6 @@ public class SecurityConfig {
                                 "/api/v1/rooms/*/ai/**",
                                 "/api/v1/rooms/participants",
                                 "/api/v1/rooms/participants/stream",
-                                "/api/v1/places/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"

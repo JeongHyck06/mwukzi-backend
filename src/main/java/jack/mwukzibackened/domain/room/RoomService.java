@@ -7,6 +7,7 @@ import jack.mwukzibackened.domain.participant.Participant;
 import jack.mwukzibackened.domain.participant.ParticipantRepository;
 import jack.mwukzibackened.domain.participant.ParticipantRole;
 import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
+import jack.mwukzibackened.domain.room.dto.CreateRoomRequest;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
 import jack.mwukzibackened.domain.room.dto.ParticipantPreferenceResponse;
 import jack.mwukzibackened.domain.room.dto.RoomParticipantResponse;
@@ -37,23 +38,33 @@ public class RoomService {
 
     private static final int INVITE_CODE_LENGTH = 6;
     private static final String INVITE_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final int DEFAULT_RADIUS_METERS = 1000;
-    private static final BigDecimal DEFAULT_CENTER_LAT = BigDecimal.ZERO;
-    private static final BigDecimal DEFAULT_CENTER_LNG = BigDecimal.ZERO;
+    private static final int DEFAULT_RADIUS_METERS = 1500;
     private static final int DEFAULT_EXPIRES_HOURS = 6;
     private final SecureRandom random = new SecureRandom();
 
     @Transactional
-    public CreateRoomResponse createRoom(UUID userId) {
+    public CreateRoomResponse createRoom(UUID userId, CreateRoomRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("사용자를 찾을 수 없습니다"));
+
+        if (request == null
+                || request.getCenterLat() == null
+                || request.getCenterLng() == null) {
+            throw new BadRequestException("방장 위치 권한을 허용한 뒤 방을 다시 만들어 주세요");
+        }
+
+        Integer radiusMeters = request != null && request.getRadiusMeters() != null
+                ? request.getRadiusMeters()
+                : DEFAULT_RADIUS_METERS;
+        BigDecimal centerLat = BigDecimal.valueOf(request.getCenterLat());
+        BigDecimal centerLng = BigDecimal.valueOf(request.getCenterLng());
 
         Room room = Room.builder()
                 .inviteCode(generateUniqueInviteCode())
                 .host(user)
-                .radiusMeters(DEFAULT_RADIUS_METERS)
-                .centerLat(DEFAULT_CENTER_LAT)
-                .centerLng(DEFAULT_CENTER_LNG)
+                .radiusMeters(radiusMeters)
+                .centerLat(centerLat)
+                .centerLng(centerLng)
                 .expiresAt(LocalDateTime.now().plusHours(DEFAULT_EXPIRES_HOURS))
                 .build();
         Room savedRoom = roomRepository.save(room);

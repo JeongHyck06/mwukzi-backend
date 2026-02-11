@@ -2,6 +2,7 @@ package jack.mwukzibackened.domain.room;
 
 import jack.mwukzibackened.common.exception.UnauthorizedException;
 import jack.mwukzibackened.common.security.AuthenticatedUser;
+import jack.mwukzibackened.domain.room.dto.CreateRoomRequest;
 import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
 import jack.mwukzibackened.domain.room.dto.JoinRoomRequest;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
@@ -42,12 +43,13 @@ public class RoomController {
     @PostMapping
     @Operation(summary = "방 생성", description = "로그인한 사용자가 방을 생성합니다.")
     public ResponseEntity<CreateRoomResponse> createRoom(
-            @AuthenticationPrincipal AuthenticatedUser principal
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody(required = false) CreateRoomRequest request
     ) {
         if (principal == null) {
             throw new UnauthorizedException("인증이 필요합니다");
         }
-        CreateRoomResponse response = roomService.createRoom(principal.getUserId());
+        CreateRoomResponse response = roomService.createRoom(principal.getUserId(), request);
         return ResponseEntity.ok(response);
     }
 
