@@ -70,7 +70,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(ErrorResponse.builder()
                         .code("KAKAO_API_ERROR")
-                        .message("외부 인증 서비스 오류입니다")
+                        .message("외부 카카오 서비스 오류입니다")
                         .build());
     }
 

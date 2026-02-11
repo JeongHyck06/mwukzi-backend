@@ -58,8 +58,9 @@ public class Participant {
         this.role = role;
     }
     
-    public void submitPreference() {
+    public void submitPreference(String preferenceText) {
         this.hasSubmitted = true;
+        this.preferenceText = preferenceText;
     }
 
     public void submitPreference(String preferenceText) {

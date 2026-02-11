@@ -33,6 +33,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/kakao",
                                 "/api/v1/rooms/join",
                                 "/api/v1/rooms/leave",
+                                "/api/v1/rooms/*/places/search",
+                                "/api/v1/rooms/*/places/detail",
                                 "/api/v1/rooms/*/participants",
                                 "/api/v1/rooms/*/preferences/submit",
                                 "/api/v1/rooms/*/preferences/**",

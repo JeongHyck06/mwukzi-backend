@@ -1,39 +1,42 @@
 spring:
-  application:
-    name: mwukzi-backend
-  
-  profiles:
-    active: local  # 기본 프로필
-  
-  jpa:
-    hibernate:
-      ddl-auto: validate  # 배포 환경에서는 validate 또는 none
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-  
-  jackson:
-    property-naming-strategy: SNAKE_CASE
-    # serialization:
-    #   WRITE_DATES_AS_TIMESTAMPS: false
+    application:
+        name: mwukzi-backend
+
+    profiles:
+        active: local # 기본 프로필
+
+    jpa:
+        hibernate:
+            ddl-auto: validate # 배포 환경에서는 validate 또는 none
+        open-in-view: false
+        show-sql: false
+        properties:
+            hibernate:
+                format_sql: true
+                dialect: org.hibernate.dialect.PostgreSQLDialect
+
+    jackson:
+        property-naming-strategy: SNAKE_CASE
+        # serialization:
+        #   WRITE_DATES_AS_TIMESTAMPS: false
 
 server:
-  port: 8080
+    port: 8080
 
 # JWT 설정 (환경변수로 주입 권장)
 jwt:
-  secret: ${JWT_SECRET:your-secret-key-change-this}
-  expiration: 86400000  # 24시간
-  room-token-expiration: 7200000  # 2시간
+    secret: ${JWT_SECRET:your-secret-key-change-this}
+    expiration: 86400000 # 24시간
+    room-token-expiration: 7200000 # 2시간
 
 # 카카오 API
 kakao:
-  rest-api-key: ${KAKAO_REST_API_KEY}
-  user-info-url: https://kapi.kakao.com/v2/user/me
+    rest-api-key: ${KAKAO_REST_API_KEY}
+    user-info-url: https://kapi.kakao.com/v2/user/me
+    local-search-url: https://dapi.kakao.com/v2/local/search/keyword.json
+    image-search-url: https://dapi.kakao.com/v2/search/image
 
 openai:
-  api-key: ${OPENAI_API_KEY:}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
-  base-url: https://api.openai.com
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    base-url: https://api.openai.com

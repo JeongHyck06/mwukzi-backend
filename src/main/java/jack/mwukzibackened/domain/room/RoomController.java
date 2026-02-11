@@ -2,6 +2,7 @@ package jack.mwukzibackened.domain.room;
 
 import jack.mwukzibackened.common.exception.UnauthorizedException;
 import jack.mwukzibackened.common.security.AuthenticatedUser;
+import jack.mwukzibackened.domain.room.dto.CreateRoomRequest;
 import jack.mwukzibackened.domain.room.dto.CreateRoomResponse;
 import jack.mwukzibackened.domain.room.dto.JoinRoomRequest;
 import jack.mwukzibackened.domain.room.dto.JoinRoomResponse;
@@ -42,12 +43,13 @@ public class RoomController {
     @PostMapping
     @Operation(summary = "방 생성", description = "로그인한 사용자가 방을 생성합니다.")
     public ResponseEntity<CreateRoomResponse> createRoom(
-            @AuthenticationPrincipal AuthenticatedUser principal
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody(required = false) CreateRoomRequest request
     ) {
         if (principal == null) {
             throw new UnauthorizedException("인증이 필요합니다");
         }
-        CreateRoomResponse response = roomService.createRoom(principal.getUserId());
+        CreateRoomResponse response = roomService.createRoom(principal.getUserId(), request);
         return ResponseEntity.ok(response);
     }
 
@@ -140,10 +142,14 @@ public class RoomController {
             @AuthenticationPrincipal AuthenticatedUser principal
     ) {
         java.util.UUID participantId = request == null ? null : request.getParticipantId();
+        java.util.List<String> chips = request == null ? java.util.List.of() : request.getChips();
+        String freeText = request == null ? "" : request.getFreeText();
         RoomParticipantResponse response = roomService.submitPreference(
                 roomId,
                 principal == null ? null : principal.getUserId(),
                 participantId,
+                chips,
+                freeText
                 request == null ? null : request.getChips(),
                 request == null ? null : request.getFreeText()
         );
@@ -152,6 +158,10 @@ public class RoomController {
 
     /**
      * GET /api/v1/rooms/{roomId}/preferences/{participantId}
+     * 참여자 취향 상세 조회
+     */
+    @GetMapping("/{roomId}/preferences/{participantId}")
+    @Operation(summary = "참여자 취향 상세 조회", description = "참여자의 취향 텍스트를 조회합니다.")
      * 참여자 취향 상세 조회 (인증 불필요)
      */
     @GetMapping("/{roomId}/preferences/{participantId}")
