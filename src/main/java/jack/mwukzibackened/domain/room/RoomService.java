@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.UUID;
@@ -242,6 +243,26 @@ public class RoomService {
         return response;
     }
 
+    public ParticipantPreferenceResponse getParticipantPreference(UUID roomId, UUID participantId) {
+        Participant participant = participantRepository.findById(participantId)
+                .orElseThrow(() -> new NotFoundException("참여자를 찾을 수 없습니다"));
+        if (!participant.getRoom().getId().equals(roomId)) {
+            throw new BadRequestException("방 정보가 올바르지 않습니다");
+        }
+
+        String preferenceText = participant.getPreferenceText();
+        if (preferenceText == null || preferenceText.isBlank()) {
+            preferenceText = "";
+        }
+
+        return ParticipantPreferenceResponse.builder()
+                .participantId(participant.getId())
+                .displayName(participant.getDisplayName())
+                .hasSubmitted(Boolean.TRUE.equals(participant.getHasSubmitted()))
+                .preferenceText(preferenceText)
+                .build();
+    }
+
     @Transactional
     public ParticipantPreferenceResponse getParticipantPreference(
             UUID roomId,
@@ -335,5 +356,21 @@ public class RoomService {
             builder.append(INVITE_CODE_CHARS.charAt(index));
         }
         return builder.toString();
+    }
+
+    private String buildPreferenceText(List<String> chips, String freeText) {
+        List<String> normalizedChips = chips == null
+                ? Collections.emptyList()
+                : chips.stream()
+                .map(value -> value == null ? "" : value.trim())
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+        String normalizedFreeText = freeText == null ? "" : freeText.trim();
+
+        String chipPart = normalizedChips.isEmpty() ? "없음" : String.join(", ", normalizedChips);
+        String freeTextPart = normalizedFreeText.isEmpty() ? "없음" : normalizedFreeText;
+
+        return "[취향 입력 요약]\n- 선택 태그: " + chipPart + "\n- 자유 입력: " + freeTextPart;
     }
 }

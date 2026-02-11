@@ -150,6 +150,8 @@ public class RoomController {
                 participantId,
                 chips,
                 freeText
+                request == null ? null : request.getChips(),
+                request == null ? null : request.getFreeText()
         );
         return ResponseEntity.ok(response);
     }
@@ -160,6 +162,10 @@ public class RoomController {
      */
     @GetMapping("/{roomId}/preferences/{participantId}")
     @Operation(summary = "참여자 취향 상세 조회", description = "참여자의 취향 텍스트를 조회합니다.")
+     * 참여자 취향 상세 조회 (인증 불필요)
+     */
+    @GetMapping("/{roomId}/preferences/{participantId}")
+    @Operation(summary = "참여자 취향 상세 조회", description = "참여자의 제출된 취향 상세를 조회합니다.")
     public ResponseEntity<ParticipantPreferenceResponse> getParticipantPreference(
             @PathVariable java.util.UUID roomId,
             @PathVariable java.util.UUID participantId
