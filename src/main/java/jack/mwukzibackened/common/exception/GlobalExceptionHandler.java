@@ -74,6 +74,16 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(NaverApiException.class)
+    public ResponseEntity<ErrorResponse> handleNaverApi(NaverApiException ex) {
+        log.warn("네이버 API 오류: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(ErrorResponse.builder()
+                        .code("NAVER_API_ERROR")
+                        .message("외부 장소 검색 서비스 오류입니다")
+                        .build());
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
