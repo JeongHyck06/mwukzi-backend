@@ -35,6 +35,8 @@ public class SecurityConfig {
                                 "/api/v1/rooms/leave",
                                 "/api/v1/rooms/*/places/search",
                                 "/api/v1/rooms/*/places/detail",
+                                "/api/v1/rooms/*/places/selections",
+                                "/api/v1/rooms/*/places/selections/summary",
                                 "/api/v1/rooms/*/participants",
                                 "/api/v1/rooms/*/preferences/submit",
                                 "/api/v1/rooms/*/preferences/**",
