@@ -10,6 +10,9 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
+import io.netty.channel.ChannelOption;
+import java.time.temporal.ChronoUnit;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
@@ -19,12 +22,18 @@ import java.time.Duration;
 public class KakaoApiClient {
     
     private static final Logger log = LoggerFactory.getLogger(KakaoApiClient.class);
-    private static final Duration KAKAO_TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration KAKAO_TIMEOUT = Duration.ofSeconds(8);
 
     @Value("${kakao.user-info-url}")
     private String userInfoUrl;
     
-    private final WebClient webClient = WebClient.builder().build();
+    private final WebClient webClient = WebClient.builder()
+            .clientConnector(new org.springframework.http.client.reactive.ReactorClientHttpConnector(
+                    HttpClient.create()
+                            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 3000)
+                            .responseTimeout(Duration.ofSeconds(8))
+            ))
+            .build();
     
     /**
      * 카카오 Access Token으로 사용자 정보 조회
@@ -51,6 +60,9 @@ public class KakaoApiClient {
                     )
                     .bodyToMono(KakaoUserInfo.class)
                     .timeout(KAKAO_TIMEOUT)
+                    .retryWhen(reactor.util.retry.Retry
+                            .fixedDelay(1, Duration.of(300, ChronoUnit.MILLIS))
+                            .filter(ex -> ex instanceof java.util.concurrent.TimeoutException))
                     .block();
 
             if (userInfo == null) {
