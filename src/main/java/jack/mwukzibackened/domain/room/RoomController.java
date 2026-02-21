@@ -106,7 +106,7 @@ public class RoomController {
     ) {
         SseEmitter emitter = roomSseService.subscribe(inviteCode);
         List<RoomParticipantResponse> participants = roomService.getParticipantsByInviteCode(inviteCode);
-        roomSseService.sendParticipants(inviteCode, participants);
+        roomSseService.sendParticipantsToEmitter(inviteCode, emitter, participants);
         return emitter;
     }
 

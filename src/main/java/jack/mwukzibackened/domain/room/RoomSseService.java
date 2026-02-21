@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -32,6 +31,14 @@ public class RoomSseService {
         send(inviteCode, "participants", participants);
     }
 
+    public void sendParticipantsToEmitter(
+            String inviteCode,
+            SseEmitter emitter,
+            List<RoomParticipantResponse> participants
+    ) {
+        sendToEmitter(inviteCode, emitter, "participants", participants);
+    }
+
     public void sendRecommendation(String inviteCode, MenuRecommendationResponse recommendation) {
         send(inviteCode, "recommendation", recommendation);
     }
@@ -51,11 +58,17 @@ public class RoomSseService {
         }
 
         for (SseEmitter emitter : list) {
-            try {
-                emitter.send(SseEmitter.event().name(event).data(data));
-            } catch (IOException ex) {
-                removeEmitter(inviteCode, emitter);
-            }
+            sendToEmitter(inviteCode, emitter, event, data);
+        }
+    }
+
+    private void sendToEmitter(String inviteCode, SseEmitter emitter, String event, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(event).data(data));
+        } catch (Exception ex) {
+            // IOException 외 IllegalStateException 등도 발생할 수 있어 안전하게 정리합니다.
+            log.debug("SSE 전송 실패: inviteCode={}, event={}", inviteCode, event, ex);
+            removeEmitter(inviteCode, emitter);
         }
     }
 
